@@ -1,0 +1,247 @@
+---
+title: Companion Notebook for Flint et al. 2016 Historical Analysis of Hydraulic Bridge
+  Collapses in the Continental United States
+author: '[Madeleine Flint](http://www.mflint.cee.vt.edu)'
+date: "2019-02-22"
+output:
+  html_document:
+    df_print: paged
+---
+
+<!-- Hidden: knitr and R markdown setup. -->
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+opts_chunk$set(fig.width=12, fig.height=4, fig.path='../Plots/',message=FALSE)
+```
+<!-- Hidden: check for consistency with cloned git Repo and for presence of necessary folders and files. -->
+```{r directories, include=FALSE, warning=FALSE, message=FALSE}
+gitRepoName <- "Flint.et.al.2016.Historical.Hydraulic.Bridge.Collapses"
+if(grepl(gitRepoName,gsub(paste0("/",gitRepoName),"",getwd()))) warning("Git repository folder name is duplicated, please consider re-cloning.")
+if(!grepl(gitRepoName,getwd()))stop("Notebook only functions with working directory set to original repository.")
+fold.req <- c("Scripts", "Data")
+if (any(!(fold.req %in% list.dirs(path = getwd(), full.names = FALSE, recursive = FALSE)))) stop("Scripts and Data directories and files must be present.")
+files.req <- c(paste0(gitRepoName,".Rproj"), "README.md")
+if (any(!(files.req %in% list.files()))) stop("Seeming mismatch with directories.")
+
+# check for folders and create analysis folders if missing
+fold.req <- c("./Plots")
+dirsCreate <- fold.req[!(fold.req %in% list.dirs(recursive = FALSE))]
+if (length(dirsCreate)) sapply(dirsCreate, function(d) dir.create(d))
+
+# cleanup
+rm(fold.req,files.req,dirsCreate)
+```
+<!-- Hidden: load and install packages. -->
+```{r install.load.packages, include=FALSE, warning=FALSE, message=FALSE}
+packages <- c("ggplot2","plyr","reshape2","grid","gridExtra",
+              "RColorBrewer","scales","rgdal","Hmisc","Kendall") 
+new.pkg <- packages[!(packages %in% installed.packages())]
+if (length(new.pkg)){
+    repo <- "http://cran.us.r-project.org"
+    install.packages(new.pkg, dependencies = TRUE, repos = repo)
+    sapply(new.pkg, require, character.only = TRUE)
+}
+lapply(packages, require, character.only = TRUE)
+```
+
+This notebook produces snippets of the statistical analyses published in the [ASCE Journal of Infrastructure Systems](http://ascelibrary.org/doi/10.1061/%28ASCE%29IS.1943-555X.0000354) (and permanently archived in the [Stanford Digital Repository](https://purl.stanford.edu/xq579rb2654)). It serves two purposes:
+
+1. To highlight results from the publication
+2. To demonstrate the analysis and plotting capabilities provided in the associated [gitLab repository](https://code.vt.edu/mflint/Flint.et.al.2016.Historical.Hydraulic.Bridge.Collapses)
+
+# Motivation
+* [The majority of US bridge collapses](https://ascelibrary.org/doi/10.1061/%28ASCE%29CF.1943-5509.0000571) are due to hydraulic (water-related) causes, including [floods](https://pubs.usgs.gov/wsp/1840b/report.pdf), [hurricanes](http://ascelibrary.org/doi/abs/10.1061/(ASCE)1084-0702(2008)13:1(6)), [scour](https://en.wikipedia.org/wiki/Bridge_scour), and [ice jams](https://en.wikipedia.org/wiki/Ice_jam).
+* Climate change is expected to [increase the frequency of intense precipitation and alter patterns of flooding](www.nrc.gov/docs/ML1412/ML14129A233.pdf), potentially [changing the risk of hydraulic collapse](https://ascelibrary.org/doi/10.1061/%28ASCE%29TE.1943-5436.0000108). 
+* No national, empirical data is available on the intensity of stream flows required to cause collapse; climate change impact studies have therefore used various proxies, frequently based on modern bridge design standards.
+* The majority of bridges over water in the US (approximately three-quarters of 504,000) were built prior to modern design standards (pre-1991). These standards were [informed by two major scour-related collapses](https://www.tandfonline.com/doi/abs/10.1080/02508069608686502?journalCode=rwin20), particularly that of the [Schoharie Creek Bridge](https://www.timesunion.com/local/article/30-years-ago-Bridge-collapse-kills-10-11045976.php) in New York (shown below).
+* High-quality data describing the intensity of flows causing collapse could be used to constrain climate impact assessments of bridge risk, which currently predict [$140 billion to $250 billion in direct costs](https://link.springer.com/article/10.1007%2Fs11027-011-9354-2), or [increased direct and indirect losses of 17%](https://ascelibrary.org/doi/10.1061/%28ASCE%29IS.1943-555X.0000109).
+
+![](../Plots/Supplemental/Collapses.jpg)
+
+# Overview of methods
+The study summarized by this notebook relies on a database of bridge collapses maintained by the New York State Department of Transportation. The database is compiled based on voluntary quadrennial surveys of other state DOTs and searches for collapse-related news reports in various databases. Data availability and quality are inconsistent across the states, and is in general insufficient to determine the geolocations of the collapsed bridges. A custom, structured string-matching algorithm was used to cross-reference the NYSDOT data with National Bridge Inventory GIS data (manuscript in progress). The examples below are representative of the cases in which a bridge match was found and geolocation was successful.
+```{r example.table, echo=FALSE}
+load(file.path("Data","df.Fail.NBI.Gage.RData"))
+head(df.Fail.NBI.Gage[c("47","103","110","195"),c(1:2,4:14)])
+```
+
+35 collapses were identified where a US Geological Survey stream gage measured the flow on the date of bridge collapse. In some cases the gage was directly on the bridge; in other cases it was up to 10km away. The cases below are fairly representative. 
+
+![ID103](../Plots/Supplemental/ID103.jpg){width=225px} ![ID195](../Plots/Supplemental/ID195.jpg){width=225px} ![ID1068](../Plots/Supplemental/ID1068.jpg){width=225px}
+
+A variety of standard flood frequency (hydrological) analyses were performed to assess how extreme a flood needed to be to induce collapse: the results are reported as "return periods", or the expected time between flow events of the same or greater intensity. Statistical tests (e.g., [Mann-Whitney U](https://en.wikipedia.org/wiki/Mann–Whitney_U_test), [$\chi^2$](https://en.wikipedia.org/wiki/Chi-squared_test)) were used to evaluate factors that may influence collapse, including the cause of collapse (i.e., scour versus flood), or presence of tropical storms.
+
+# Results
+The plot below of the 35 collapse locations has several options with regard to scaling of points, plotting of hurricane indicators, and use of insets in the Mid-Atlantic and New England regions. Defaults are provided for almost all options; each option is re-produced here for illustration purposes. Colors and shapes are encoded in a single file, used by all plotting scripts. An [interactive  version of this map](https://mflint.shinyapps.io/FailMap/), created using RShiny and Leaflet, is also available.
+```{r failed.map, fig.width=8, message=FALSE, warning=FALSE}
+source(file.path("Scripts","Plotting","PlotFailedBridgesMap.R"))
+source(file.path("Scripts","Plotting","SetupEncoding.R"))
+# Modify "controls" list below to make sure all changes are passed to each inset figure
+#     encoding:
+#        fill  = collapse cause {flood, scour, hurricane, other}
+#        shape = filled circle/unfilled circle for known collapse date T/F
+#                "H" for linked hurricane
+#        alpha = known collapse date T/F (if shape not used)
+#        size  = drainage area, see options for size
+#     options:
+#        size       = one of {"scaleLog","continuous","area","none"}
+#        legendPos  = {"RIGHT", "BOTTOM"} = legend position
+#        SHOW_HURR  = TRUE/FALSE = superimpose "H" on hurricane sites
+#        USE_SHAPE  = encode known failure date by filled/unfilled circle shapes (TRUE) or transparency (FALSE)
+#        FOR_INSET  = TRUE/FALSE = controls for showing zoomed-in portions of map (note that only "area" and
+#                                  "continuous" size options have all features for insets)
+#        INSET      = {"MidAtlantic", "NewEngland"} = regions for zoomed-in insets 
+#        outputType = {"PRES","PRINT","NOTE"} = fonts sized for presentation, paper, or notebook
+#        SAVE       = TRUE/FALSE = save file
+#        SIZE       = c(width, height) in inches
+#        EPS        = TRUE/FALSE = save as eps rather than pdf
+controls <- list(size = "area", USE_SHAPE = TRUE, embedFonts = FALSE)
+FailedMap       <- PlotFailedBridgesMap(df.Fail.NBI.Gage[rowsToView,], size = "area", 
+                                        plotSites = "BRIDGE", outputType = "NOTE", USE_SHAPE = controls$USE_SHAPE, 
+                                        LEGEND = TRUE, legendPos = "RIGHT", SHOW_HURR = TRUE, 
+                                        FOR_INSET = FALSE, INSET = NA, 
+                                        SAVE = FALSE, SIZE = c(7,5), EPS = FALSE)
+FailedMap
+```
+
+Skipping to the most important result, the following histogram shows the distribution of the return periods of collapse-inducing flows, as determined by [Bulletin 17B analysis](https://water.usgs.gov/osw/bulletin17b/dl_flow.pdf), a procedure for fitting an extreme value distribution to observed annual peak flows. Several observations can be made:
+
+* The return periods associated with collapse varied by several orders of magnitude, and were frequently lower than the 100-year and 500-year values used in modern bridge design standards.
+* The scour (red) results appear to be occurring at relatively smaller floods compared to other causes (modern standards require scour checks for 500-year floods).
+* The empirical results are not consistent with the assumptions used in most climate change impact studies, and indicate that previous studies may have underestimated risk.
+
+```{r return.hist, echo=FALSE, results=FALSE, fig.width=6}
+source(file.path("Scripts","Plotting","PlotReturnHist.R"))
+ReturnHist <- PlotReturnHist(df.Fail.NBI.Gage[rowsToView,], SAVE = FALSE, plotTypes = "D",
+                             LEGEND = TRUE, outputType = "NOTE")
+ReturnHist
+```
+
+Results in terms of collapse-inducing flows and their return periods can also be plotted as bar charts. Controls are available for: the content of the labels; the axes scaling (log or linear), stream flow units (metric or Imperial); and use of transparency and lines connecting related points. The figures can be printed individually, or, as shown below, combined based on like labels and legends. From a bridge engineering and risk perspective, several observations can be made based on plots below (or rather, their complete versions in the paper):
+
+* The actual stream flow volumes causing collapse varied over several orders of magnitude. This finding is consistent with the varying drainage area of the sites (i.e., both small and large streams were studied).
+* In many cases the bridge collapsed during the largest flow that had every been recorded at the site, indicating that bridge designs were likely adequate based on past conditions and observations (these appear as "bullseyes" in the plots).
+* Even though some of the collapse flows were unusually large, they did not consistently meet modern design standards (the dot representing collapse would need to be to the right of the smaller square, indicating a 100-year flood).
+* The flood frequency analyses performed in this study were consistent with previous analyses available in the literature (dots are within the ranges of the horizontal black bars on the right plot), raising confidence in the results.
+
+```{r analysis.figs, echo=FALSE, results=FALSE, message=FALSE,warning=FALSE, fig.height=5}
+source(file.path("Scripts","Plotting","PlotFailMaxFlows.R"))
+load(file.path("Data","StateCountyCityData.RData"))
+rowsToPlot <- rowsToView[seq(from=1,to=35, by=4)]
+p1 <- PlotFailMaxFlows(df.Fail.NBI.Gage[rowsToPlot,], SAVE = FALSE, plotTypes = "pLogD", Q_units = "m3s", 
+                                  ONLY = NA, LABELS=TRUE, LEGEND=FALSE, SUPER_FIELDS = c("Hurr","Area","FailDate"),  
+                                  outputType = "NOTE")
+source(file.path("Scripts","Plotting","PlotReturnPeriodsFailMax.R"))
+Breaks             <- c(1,5,10,50,100,500,1000)
+p2 <- PlotReturnPeriodsFailMax(df.Fail.NBI.Gage[rowsToPlot,],Breaks=Breaks,outputType = "NOTE",
+                                               SAVE=FALSE,plotTypes = "pHECd",LABELS = FALSE,LEGEND=TRUE, SHOW_Q100_SYMB = TRUE)
+p <- c(p1, p2)
+margin = theme(plot.margin = unit(c(1,1,1,1), "cm"))
+grid.arrange(grobs = lapply(p, "+", margin), ncol=2)
+```
+
+As several types of data and two methods of flood frequency analysis were used, correlation plots were developed to investigate trends. A surfeit of plotting options are available, with summary statistics and regressions computed for each case. Reproducing the plots in the paper uses a script, "PlotCorrsMakeGrid.R", which calls several subfunctions that perform the actual analysis and plotting.
+
+* "PlotAllCorrs.R" controls settings and which subplots are created
+* "PlotT1T2corrRegress.R" creates the individual subplots
+* "PlaceLogAnnotation.R" determines location for text with statistics in log space
+* "CorrelationsFailMaxEvents.R" runs statistical analyses
+
+For this notebook it's much simpler skip the wrapper and directly call "PlotAllCorrs". A few observations can be made from these plots:
+
+* The left plot, on log-log scale, seems to show a slightly biased relationship between the standard return periods (from Bulletin 17B analysis) and return periods calculated from the partial duration curve (basically an empirical cumulative distribution).
+* The right plot, on a linear scale, shows the true, severe bias. This bias can also be noted from the text annotations on the left, where the regression line equation is provided for both the log and linear scales.
+* As seen previously in the bar charts, the scour-related (red) points seem to have lower values than other failure causes; hypothesis tests were used to explore the validity of this apparent result. The $\chi^2$ test confirmed that scour collapses occurred at lower return periods than those from other causes.
+
+```{r corrs, echo=FALSE, results=FALSE, message=FALSE,warning=FALSE, fig.height=5}
+source(file.path("Scripts","Plotting","PlotAllCorrs.R"))        
+source(file.path("Scripts","Plotting","MakeGridPlot.R"))
+source(file.path("Scripts","Helper","CorrelationsFailMaxEvents.R"))
+ls.corrs <- CorrelationsFailMaxEvents(df.Fail.NBI.Gage[rowsToView,],SAVE = FALSE, TYPES = "USGS")
+p1 <- PlotAllCorrs(df.Fail.NBI.Gage[rowsToView,],ls.corrs, TYPE = "USGS", SAVE = FALSE, SCREEN = TRUE, TEXT = c("LRlog","LR","Rho","Tau"), 
+                  ONLY = "Part", ANY=NULL, NOT=c("i","ip"), # these can be used to reduce the number of plots generated
+                  ALPHA_VAR = "FAIL_IS_MAX", SCALE = "LOG", REG = FALSE,
+                  LEGEND = "NONE", ANNOTATE_LOC = "TL", SCALE_VAR = "DRAIN_SQKM", SHAPE_VAR = "BOOL_KNOWN_FAIL_DATE",
+                  outputType = "NOTE", SIZE = c(7,11), SCALE_CORRECTION = 1, JITTER = FALSE, Q_units = "m3s")
+p2 <- PlotAllCorrs(df.Fail.NBI.Gage[rowsToView,],ls.corrs, TYPE = "USGS", SAVE = FALSE, SCREEN = TRUE, TEXT = c("LR","Rho","Tau"), 
+                  ONLY = "Part", ANY=NULL, NOT=c("i","ip"),
+                  ALPHA_VAR = "FAIL_IS_MAX", SCALE = "LINEAR", REG = FALSE,
+                  LEGEND = "NONE", ANNOTATE_LOC = "TL", SCALE_VAR = "DRAIN_SQKM", SHAPE_VAR = "BOOL_KNOWN_FAIL_DATE",
+                  outputType = "NOTE", SIZE = c(7,11), SCALE_CORRECTION = 1, JITTER = FALSE, Q_units = "m3s")
+p <- c(p1, p2)
+margin = theme(plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))
+grid.arrange(grobs = lapply(p, "+", margin), ncol=2)
+```
+
+In the context of climate impact assessment, the finding of high variability of collapse-inducing return periods, in each flow frequency method, is critical. A climate impact assessment of bridge collapse that considers only the 100- and/or 500-year flood has a high risk of underestimating climate effects. This point can be demonstrated with a simple structural reliability analysis, of the sort that forms the basis for structural design codes. First considering only one flood of interest (100-year flow $=Q_{100}$), the rate ("mean annual frequency of exceedence") of failure can be computed if the probability of failure given the event is known. 
+
+Failure rate $= Pr(failure | Q > Q_{100})Pr(Q > Q_{100}$ over one year$)= Pr(failure | Q > Q_{100})\frac{1}{100 years}$
+
+This equation takes advantage of the definition of return periods. When the probability of the maximum flood in the year is based on data describing the maximum flood over a number of years,
+
+$T_R(q) = 1/Pr(Q > q)$
+
+which holds for infrequent events following a Poisson process. In fact, a generalization can be made through use of  a hazard curve ($\lambda_X(x)$), which provides the mean annual frequency of exceeding values of flow (or other hazardous event). Now the simple multiplication used for the point estimate case is replaced by a convolution integral, such that all possible flows are considered. Hazard curves are usually developed through a probabilistic analysis specific to the location and hazard of interest. This study is interested in overall rates, requiring a more generic form of hazard curve. Fortunately, the return periods associated with the failure events meet the mathematical requirements of a hazard curve, such that the equation can be written as:
+
+Failure rate $= \int_{t=0}^{t=+\infty} Pr(failure | T_R > t) \left|d\lambda_{T_R}(t)\right|$
+
+The estimates of collapse-inducing return periods from the study can be used to estimate  $Pr(failure | T_R > t)$, and subsequently investigate the impact of a change in the underlying flood hazard curve. For simplicity, a uniform scaling by $1 \pm \delta$ can be taken and the updated failure rate can be calculated. The full distribution approach uses a kernel-smoothed non-parametric distribution fitted to the collapse return period data. The effect of the scaling can also be found for the point estimate case by reading off the relevant value from the hazard curve. The full distribution approach will be compared against a "nominal" reliability from bridge design and a point estimate from the median of the collapse return periods. Scaling from -0.3 to 0.3 will be considered.
+
+```{r failure.prob, echo=FALSE}
+delta <- seq(from = -0.3, to = 0.3, length.out = 31) # uniform scaling of flood frequency curve
+
+source(file.path("Scripts","Plotting","PlotHazardCurve.R"))
+source(file.path("Scripts","Plotting","PlotImpactScaling.R"))
+
+# Set up the hazard curve
+Ts    <- 10^seq(from = 0.1, to = 3, length.out = 50)
+T.delta <- as.data.frame(sapply(delta, function(d) 1/(Ts*(1+d))))
+colnames(T.delta) <- as.character(delta)
+T.delta$T_0 <- Ts
+T.delta.plot <- T.delta[,c(seq(from=1,to=31,length.out = 11),32)]
+pT <- PlotHazardCurve(T.delta.plot)
+
+# Set up the reliability calculations
+T.cols  <- c(D ="T_FAIL_D_HECD_USGS") # which data to use from collapse study
+# Kernel density from collapse return periods
+dt <- 1
+t <- seq(dt,12000,by=dt)
+T.limits <-c(D=2000,IP=11000) # limits of integration for kernel density
+T.kernels <- lapply(names(T.cols), function(j) density(df.Fail.NBI.Gage[rowsToView,T.cols[j]]
+                                                       [!is.na(df.Fail.NBI.Gage[rowsToView,T.cols[j]])], 
+                                                       adjust = 2, 
+                                                       from = 0, to = T.limits[j]))
+
+T.kernels.interp <- lapply(1:length(T.kernels), function(j) approxExtrap(T.kernels[[j]]$x, T.kernels[[j]]$y, t))
+pf.Kernel.delta <- sapply(delta, function(d) apply(sapply(1:length(T.kernels), 
+                                                          function(j) T.kernels.interp[[j]]$y/(t*(1+d))^2*dt),MARGIN = 2, sum))
+
+# Point estimate (median because data is skewed) from collapse data
+T.Medians <- sapply(T.cols, function(j) median(df.Fail.NBI.Gage[rowsToView,j],na.rm = T))
+pf.Medians.delta <- sapply(delta, function(d) 1/(T.Medians*(1+d)))
+
+# Nominal reliability of 1.75 given a 100-year flood event occurs
+t.F   <- 100  # return period of collapse-causing flood
+beta  <- 1.75 # nominal reliability given a "100-year" flood
+pf.Nom.delta     <- sapply(delta, function(d) 1/(t.F*(1+d))*pnorm(-beta))
+
+# Plots (assumes that only one type of return period data has been used, e.g., daily)
+df.delta <- data.frame(Delta = delta, Median = pf.Medians.delta, Nom = pf.Nom.delta, Kernel = pf.Kernel.delta)
+df.delta.rat <- df.delta
+df.delta.rat[,2:4] <- sapply(2:4, function(j) (df.delta[,j]-df.delta[df.delta$Delta==0,j])/(df.delta[df.delta$Delta==0,j]))
+pP <- PlotImpactScaling(df.delta.rat)
+
+p <- list(pT, pP)
+grid.arrange(grobs = p, ncol=2)
+```
+
+At all values of the scaling ($\delta$), the full distribution approach shows higher sensitivity to changes in flood frequency than the point-based estimates. The effect is particularly pronounced when $\delta<0$, i.e., when floods of a given intensity are assumed to become more frequent. This greater sensitivity would be expected whenever a full distribution method is used, regardless of the data source; as evident from the plot, the two point-based estimates have identical response to hazard scaling. For this reason it would take a very sophisticated approach to obtain a reasonable estimate of changing collapse risk if the analysis is tied to only a single event (i.e., 100-year flood).
+
+# Conclusions
+In the context of supporting robust climate change impact assessment, two findings are emphasized:
+
+1. The return periods associated with collapse are highly variable and are affected by collapse cause. This finding is not consistent with climate impact analyses that consider only one critical event (i.e., a 100-year flood).
+2. If this variability in collapse return periods is assumed to be representative of all in-service bridges, prior impact analyses have underestimated the change (positive or negative) in risk associated with climate change.
+
+Future research that is able to product more robust statistics on collapse return periods (e.g., by analyzing more than 35 bridges) can support more accurate estimation of climate change risk and impacts. Such an effort is underway using a larger database of located bridge collapses.
